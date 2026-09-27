@@ -11,9 +11,12 @@ requires-python = ">=3.10"
 dependencies = [
     "aws-opentelemetry-distro ~= 0.18.0",
     "bedrock-agentcore >= 1.9.1",
+    "boto3>=1.43.103",
     "botocore[crt] >= 1.35.0",
+    "flask>=3.1.3",
     "mcp ~= 1.24.0",
     "pyjwt>=2.15.0",
+    "requests>=2.34.2",
     "strands-agents >= 1.15.0",
 ]
 
