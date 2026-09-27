@@ -16,6 +16,10 @@
           "reason": {
             "type": "string",
             "description": "Reason for the refund (e.g., defective item, wrong product, customer dissatisfied)"
+          },
+          "idempotency_key": {
+            "type": "string",
+            "description": "Stable id for this refund operation, for example operation-123. Reuse the same key when retrying so the backend returns the existing refund instead of creating another one."
           }
         },
         "required": ["order_id", "amount", "reason"]
