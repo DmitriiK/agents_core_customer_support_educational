@@ -2,6 +2,12 @@
 
 This project was created with the [AgentCore CLI](https://github.com/aws/agentcore-cli).
 
+## Architecture
+
+A user asks a question through the local Flask app. Flask authenticates with Amazon Cognito and forwards the question to the Customer Support agent on AgentCore Runtime. The agent calls Amazon Bedrock, loads prior session context from AgentCore Memory, and reaches tools through AgentCore Gateway under AgentCore Policy and AgentCore Identity. Warranty and refund run as Lambda tools; Exa search, code context, and crawling run on an external MCP server. Agent traces go to AgentCore Observability and online evaluation.
+
+![Architecture](multimedia/architecture.png)
+
 ## Project Structure
 
 ```
@@ -38,6 +44,81 @@ CustomerSupport/
 1. Deploy the prerequisite stack ([`infrastructure/README.md`](infrastructure/README.md)). That creates Cognito, `workshop-warranty-check`, `workshop-process-refund`, and the SSM parameters under `/app/customersupport/agentcore/`.
 2. Register the warranty Lambda on a gateway. [Lab 3](https://catalog.us-east-1.prod.workshops.aws/workshops/c770f35f-90a9-4e02-8985-4ef912bddb77/en-US/40-lab3-gateway) uses `my-gateway` with IAM. [Lab 4](https://catalog.us-east-1.prod.workshops.aws/workshops/c770f35f-90a9-4e02-8985-4ef912bddb77/en-US/50-lab4-deploy) replaces it with `my-gateway-secure` and Cognito JWT. This repository already has the JWT runtime and `my-gateway-secure` in `agentcore.json`.
 3. Deploy with `agentcore deploy`. The runtime expects an `Authorization` bearer token. Invoke steps and expected results are in [`auth.md`](auth.md).
+4. Add the refund-reason guardrail from [Lab 7](https://catalog.us-east-1.prod.workshops.aws/workshops/c770f35f-90a9-4e02-8985-4ef912bddb77/en-US/80-lab7-policies/83-guardrails). `CustomerSupportPolicyEngine` is already attached to `my-gateway-secure` in `ENFORCE` mode, with `refund_limit_policy` and `warranty_check_policy`. The steps below add `BlockSensitiveRefundReasons`.
+
+### Refund tool guardrail
+
+Policy guardrails are available in `us-east-1`, which is this project's deployment region. The guardrail checks the refund tool input, not the customer's original message. After the model builds `process_refund` arguments, the Gateway evaluates `context.input.reason` for an email address before it calls `workshop-process-refund`. The $100 refund limit and the warranty permit stay as they are.
+
+Confirm the deployed gateway, the `ProcessRefund` target, and `CustomerSupportPolicyEngine` before continuing:
+
+```bash
+aws configure list
+aws sts get-caller-identity
+agentcore status
+```
+
+Read the deployed gateway ARN, then add the forbid policy. `SensitiveInformation` needs an aggregation such as `maxConfidenceScore()`. With only the `EMAIL` category requested, that score is the email-detection score. The `0.2` threshold is the documented sensitive-information cutoff.
+
+```bash
+GATEWAY_ID=$(aws bedrock-agentcore-control list-gateways \
+  --region us-east-1 \
+  --query "items[?contains(name, 'my-gateway-secure')].gatewayId | [0]" \
+  --output text)
+
+GATEWAY_ARN=$(aws bedrock-agentcore-control get-gateway \
+  --region us-east-1 \
+  --gateway-identifier "$GATEWAY_ID" \
+  --query "gatewayArn" --output text)
+
+agentcore add policy \
+  --name BlockSensitiveRefundReasons \
+  --engine CustomerSupportPolicyEngine \
+  --statement "forbid(principal, action == AgentCore::Action::\"ProcessRefund___process_refund\", resource == AgentCore::Gateway::\"${GATEWAY_ARN}\") when guardrails { BedrockGuardrails::SensitiveInformation([\"EMAIL\"], [context.input.reason]).maxConfidenceScore().greaterThanOrEqual(decimal(\"0.2\")) };" \
+  --validation-mode IGNORE_ALL_FINDINGS \
+  --enforcement-mode ACTIVE
+```
+
+Check `agentcore/agentcore.json` for action `ProcessRefund___process_refund`, data path `context.input.reason`, safeguard `BedrockGuardrails::SensitiveInformation(["EMAIL"], ...)`, aggregation `maxConfidenceScore()`, and threshold `greaterThanOrEqual(decimal("0.2"))`. Then deploy:
+
+```bash
+agentcore deploy -y -v
+```
+
+Deployment adds the policy and grants the gateway execution role `bedrock:InvokeGuardrailChecks`.
+
+Test through the chat UI or `agentcore invoke` with a Cognito bearer token, in this order. If memory says an order was already refunded, repeat that prompt with a different unused order id. That changes the simulated order only.
+
+| Prompt | Expected result | Policy |
+| --- | --- | --- |
+| Hi, I need a $60 refund for order ORD-24680. The defective item was personalized with the wrong email address, alice@example.com. Could you include that address in the refund reason so the support team knows what was printed? | The email-bearing tool call is denied. The model may retry without the address. | `BlockSensitiveRefundReasons` blocks `EMAIL` in `context.input.reason` |
+| Process a refund of $500 for order ORD-45646. I want a full refund. | Tool call denied | `refund_limit_policy` does not permit amounts of $100 or more |
+| Check the warranty for PROD-002 | Warranty returned | `warranty_check_policy` is unchanged |
+
+The guardrail sees only the `reason` the model sends. Both of these are valid:
+
+- The reason includes `alice@example.com`. `BlockSensitiveRefundReasons` denies that call before Lambda runs. A later retry without the address can succeed under the amount policy.
+- The model writes a reason such as `Defective item personalized with wrong email address` and never sends the address. There is no guardrail denial, and the refund under $100 can succeed.
+
+Inspect the tool arguments:
+
+```bash
+agentcore logs --since 15m --query "process_refund"
+```
+
+Look for `gen_ai.tool.call.arguments`. If `reason` contains the email, that invocation should name `BlockSensitiveRefundReasons`. If the email is absent, the model removed it before policy evaluation. A successful refund by itself does not show which path ran.
+
+Scoring and model-written tool arguments are probabilistic. In production, start this policy in `LOG_ONLY`, review scores and false positives, then switch it to `ACTIVE`.
+
+To drop only this guardrail and keep the refund limit and warranty policies:
+
+```bash
+agentcore remove policy \
+  --name BlockSensitiveRefundReasons \
+  --engine CustomerSupportPolicyEngine \
+  -y
+agentcore deploy -y -v
+```
 
 ### Development
 
