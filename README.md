@@ -8,6 +8,8 @@ A user asks a question through the local Flask app. Flask authenticates with Ama
 
 ![Architecture](multimedia/architecture.png)
 
+[Video demo](multimedia/agentcore_kind_of_demo.mov)
+
 ## Project Structure
 
 ```
