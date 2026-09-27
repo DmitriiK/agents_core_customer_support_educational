@@ -36,6 +36,7 @@ CustomerSupport/
 │   └── frontend/           # Local Flask chat UI
 ├── infrastructure/         # Prerequisite CloudFormation stack
 ├── lambda-handlers/        # Warranty and refund Lambda code and tests
+├── tests/e2e/              # Live runtime and gateway checks (opt-in)
 └── evaluators/             # Custom evaluator code (if any)
 ```
 
@@ -129,6 +130,25 @@ agentcore remove policy \
   --engine CustomerSupportPolicyEngine \
   -y
 agentcore deploy -y -v
+```
+
+### End-to-end tests
+
+`tests/e2e/` calls the deployed runtime with the workshop Cognito user. The checks stay skipped unless `RUN_E2E=1`, because they use AWS and the chat cases spend model tokens. Run them from the repository root with the agent virtualenv:
+
+```bash
+RUN_E2E=1 uv run --project app/CustomerSupport python -m unittest tests.e2e -v
+```
+
+| File | What it checks |
+| --- | --- |
+| `tests/e2e/test_policy_enforcement.py` | Gateway Cedar rules and the chat outcomes: a $50 refund is processed, a refund of $100 or more is denied, and `PROD-002` warranty is returned |
+| `tests/e2e/test_multistep.py` | One session, three turns: accessories return policy, the USB-C Hub catalog entry, then a follow-up that uses both earlier answers |
+
+Lambda handler tests do not call AWS:
+
+```bash
+python -m unittest discover -s lambda-handlers/tests
 ```
 
 ### Development
