@@ -49,3 +49,39 @@ aws cloudformation describe-stacks \
   --query 'Stacks[0].StackStatus' \
   --output text
 ```
+
+## Gateway setup
+
+After the prerequisite stack is deployed, [Lab 3](https://catalog.us-east-1.prod.workshops.aws/workshops/c770f35f-90a9-4e02-8985-4ef912bddb77/en-US/40-lab3-gateway) exposes `workshop-warranty-check` as an MCP tool. The Gateway is not part of `prereqs.yaml`. These commands read the Lambda ARN from SSM and write the gateway plus target into `agentcore.json`. `agentcore deploy` then creates them and injects `AGENTCORE_GATEWAY_MY_GATEWAY_URL` into the CustomerSupport runtime.
+
+The tool schema is `app/CustomerSupport/tool/warranty_schema.json`. Its `inputSchema` is a JSON object with `type: object` directly. A nested `json` wrapper fails deployment.
+
+From the repository root:
+
+```bash
+WARRANTY_LAMBDA_ARN=$(aws ssm get-parameter \
+  --name /app/customersupport/agentcore/warranty_check_lambda_arn \
+  --query 'Parameter.Value' \
+  --output text \
+  --region us-east-1)
+
+echo "Lambda ARN: $WARRANTY_LAMBDA_ARN"
+
+agentcore add gateway --name my-gateway --runtimes CustomerSupport
+
+agentcore add gateway-target \
+  --type lambda-function-arn \
+  --name WarrantyCheck \
+  --lambda-arn "$WARRANTY_LAMBDA_ARN" \
+  --tool-schema-file app/CustomerSupport/tool/warranty_schema.json \
+  --gateway my-gateway
+```
+
+Expected output:
+
+```text
+Added gateway 'my-gateway'
+Added gateway target 'WarrantyCheck'
+```
+
+Lab 3 leaves the gateway on the default IAM authorizer. [Lab 4](https://catalog.us-east-1.prod.workshops.aws/workshops/c770f35f-90a9-4e02-8985-4ef912bddb77/en-US/50-lab4-deploy) removes `my-gateway` and recreates it as `my-gateway-secure` with the same Cognito JWT authorizer as the runtime. This repository already has that secured gateway in `agentcore.json`. Follow [`auth.md`](../auth.md) for the Cognito values, the gateway replacement, and the authenticated test runs.

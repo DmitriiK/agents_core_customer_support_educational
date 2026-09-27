@@ -5,8 +5,9 @@ This project was created with the [AgentCore CLI](https://github.com/aws/agentco
 ## Project Structure
 
 ```
-my-project/
+CustomerSupport/
 ├── AGENTS.md               # AI coding assistant context
+├── auth.md                 # Cognito JWT setup and auth test runs
 ├── agentcore/
 │   ├── agentcore.json      # Project config (agents, memories, credentials, gateways, evaluators)
 │   ├── aws-targets.json    # Deployment targets (account + region)
@@ -16,6 +17,8 @@ my-project/
 │   │   └── aws-targets.ts  # Deployment target types
 │   └── cdk/                # CDK infrastructure (@aws/agentcore-cdk)
 ├── app/                    # Agent application code
+├── infrastructure/         # Prerequisite CloudFormation stack
+├── lambda-handlers/        # Warranty and refund Lambda code and tests
 └── evaluators/             # Custom evaluator code (if any)
 ```
 
@@ -28,6 +31,13 @@ my-project/
 - **AWS credentials** configured (`aws configure` or environment variables)
 - **Docker** (only for Container build agents)
 - **Prerequisite stack** — Cognito, workshop Lambdas, and SSM parameters in [`infrastructure/prereqs.yaml`](infrastructure/prereqs.yaml). Lambda code is in [`lambda-handlers/`](lambda-handlers/). Deploy that stack before `agentcore deploy`. See [`infrastructure/README.md`](infrastructure/README.md).
+- **Cognito JWT** — Runtime and gateway use a custom JWT authorizer. Setup and test runs are in [`auth.md`](auth.md).
+
+### Setup
+
+1. Deploy the prerequisite stack ([`infrastructure/README.md`](infrastructure/README.md)). That creates Cognito, `workshop-warranty-check`, `workshop-process-refund`, and the SSM parameters under `/app/customersupport/agentcore/`.
+2. Register the warranty Lambda on a gateway. [Lab 3](https://catalog.us-east-1.prod.workshops.aws/workshops/c770f35f-90a9-4e02-8985-4ef912bddb77/en-US/40-lab3-gateway) uses `my-gateway` with IAM. [Lab 4](https://catalog.us-east-1.prod.workshops.aws/workshops/c770f35f-90a9-4e02-8985-4ef912bddb77/en-US/50-lab4-deploy) replaces it with `my-gateway-secure` and Cognito JWT. This repository already has the JWT runtime and `my-gateway-secure` in `agentcore.json`.
+3. Deploy with `agentcore deploy`. The runtime expects an `Authorization` bearer token. Invoke steps and expected results are in [`auth.md`](auth.md).
 
 ### Development
 
