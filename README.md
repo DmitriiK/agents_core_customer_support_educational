@@ -22,7 +22,18 @@ CustomerSupport/
 │   │   ├── agentcore.ts    # AgentCoreProjectSpec types
 │   │   └── aws-targets.ts  # Deployment target types
 │   └── cdk/                # CDK infrastructure (@aws/agentcore-cdk)
-├── app/                    # Agent application code
+├── app/CustomerSupport/    # Agent application code
+│   ├── main.py             # Runtime entrypoint
+│   ├── prompts/
+│   │   ├── system.md       # System prompt text
+│   │   └── load.py         # Reads the system prompt
+│   ├── tools/
+│   │   └── customer_support.py  # Return policy and product lookup tools
+│   ├── tool/               # Gateway tool schemas (warranty, refund)
+│   ├── model/              # Bedrock model client
+│   ├── memory/             # Session memory
+│   ├── mcp_client/         # Exa and AgentCore Gateway MCP clients
+│   └── frontend/           # Local Flask chat UI
 ├── infrastructure/         # Prerequisite CloudFormation stack
 ├── lambda-handlers/        # Warranty and refund Lambda code and tests
 └── evaluators/             # Custom evaluator code (if any)
