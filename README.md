@@ -27,6 +27,7 @@ my-project/
 - **Python 3.10+** and **uv** for Python agents ([install uv](https://docs.astral.sh/uv/getting-started/installation/))
 - **AWS credentials** configured (`aws configure` or environment variables)
 - **Docker** (only for Container build agents)
+- **Prerequisite stack** — Cognito, workshop Lambdas, and SSM parameters in [`infrastructure/prereqs.yaml`](infrastructure/prereqs.yaml). Lambda code is in [`lambda-handlers/`](lambda-handlers/). Deploy that stack before `agentcore deploy`. See [`infrastructure/README.md`](infrastructure/README.md).
 
 ### Development
 

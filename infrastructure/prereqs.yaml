@@ -1,0 +1,344 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'CloudFormation template for Customer Support Workshop prerequisites — Cognito, Lambda warranty check, and SSM parameters'
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Cognito Configuration
+        Parameters:
+          - UserPoolName
+          - MachineAppClientName
+          - WebAppClientName
+
+Parameters:
+
+  UserPoolName:
+    Type: String
+    Default: 'CustomerSupportGatewayPool'
+    Description: 'Name of the Cognito User Pool'
+  
+  MachineAppClientName:
+    Type: String
+    Default: 'CustomerSupportMachineClient'
+    Description: 'Name of the Cognito User Pool Application Client'
+  
+  WebAppClientName:
+    Type: String
+    Default: 'CustomerSupportWebClient'
+    Description: 'Name of the Cognito User Pool Web Application Client'
+
+Resources:
+
+  # ============================================================
+  # Cognito Resources
+  # ============================================================
+
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: !Ref UserPoolName
+      MfaConfiguration: 'OFF'
+      UsernameConfiguration:
+        CaseSensitive: false
+      UsernameAttributes:
+        - email  # <--- Use email as username
+      AutoVerifiedAttributes:
+        - email  # <--- Auto-verify email if you want to skip confirmation step
+  
+  AdminGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      GroupName: admin
+      Description: Administrator group
+      UserPoolId: !Ref UserPool
+      Precedence: 1  # Higher priority (lower number = higher precedence)
+
+  CustomerGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      GroupName: customer
+      Description: Regular customer group
+      UserPoolId: !Ref UserPool
+      Precedence: 2
+
+  WebUserPoolClient:
+    DependsOn: ResourceServer
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      ClientName: !Ref WebAppClientName
+      UserPoolId: !Ref UserPool
+      GenerateSecret: false  # Don't use secret for SPA or web apps
+      ExplicitAuthFlows:
+        - ALLOW_USER_PASSWORD_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+      AllowedOAuthFlows:
+        - code
+      AllowedOAuthScopes:
+        - openid
+        - email
+        - profile
+        - !Join
+            - ''
+            - - 'default-m2m-resource-server-'
+              - !Select [0, !Split ['-', !Select [2, !Split ['/', !Ref 'AWS::StackId']]]]
+              - '/read'
+      AllowedOAuthFlowsUserPoolClient: true
+      CallbackURLs:
+        - http://localhost:8501/
+        - https://example.com/auth/callback
+      LogoutURLs:
+        - http://localhost:8501/
+      SupportedIdentityProviders:
+        - COGNITO
+      AccessTokenValidity: 60
+      IdTokenValidity: 60
+      RefreshTokenValidity: 30
+      TokenValidityUnits:
+        AccessToken: minutes
+        IdToken: minutes
+        RefreshToken: days
+      EnableTokenRevocation: true
+
+  MachineUserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    DependsOn: ResourceServer
+    Properties:
+      ClientName: !Ref MachineAppClientName
+      UserPoolId: !Ref UserPool
+      GenerateSecret: true
+      ExplicitAuthFlows:
+        - ALLOW_REFRESH_TOKEN_AUTH
+      RefreshTokenValidity: 1
+      AccessTokenValidity: 60
+      IdTokenValidity: 60
+      TokenValidityUnits:
+        AccessToken: minutes
+        IdToken: minutes
+        RefreshToken: days
+      AllowedOAuthFlows:
+        - client_credentials
+      AllowedOAuthScopes:
+        - !Join
+          - ''
+          - - 'default-m2m-resource-server-'
+            - !Select [0, !Split ['-', !Select [2, !Split ['/', !Ref 'AWS::StackId']]]]
+            - '/read'
+      AllowedOAuthFlowsUserPoolClient: true
+      SupportedIdentityProviders:
+        - COGNITO
+      EnableTokenRevocation: true
+  
+  ResourceServer:
+    Type: AWS::Cognito::UserPoolResourceServer
+    Properties:
+      UserPoolId: !Ref UserPool
+      Identifier: !Join
+        - '-'
+        - - 'default-m2m-resource-server'
+          - !Select [0, !Split ['-', !Select [2, !Split ['/', !Ref 'AWS::StackId']]]]
+      Name: !Join
+        - '-'
+        - - 'Default M2M Resource Server '
+          - !Select [0, !Split ['-', !Select [2, !Split ['/', !Ref 'AWS::StackId']]]]
+      Scopes:
+        - ScopeName: 'read'
+          ScopeDescription: 'An example scope created by Amazon Cognito quick start'
+  
+  UserPoolDomain:
+    Type: AWS::Cognito::UserPoolDomain
+    Properties:
+      UserPoolId: !Ref UserPool
+      Domain: !Join
+        - ''
+        - - !Ref 'AWS::Region'
+          - !Select [0, !Split ['-', !Select [2, !Split ['/', !Ref 'AWS::StackId']]]]
+
+  # ============================================================
+  # Warranty Check Lambda Function (used in Lab 3 — Gateway)
+  # ============================================================
+
+  WarrantyCheckLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: workshop-lambda-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
+  WarrantyCheckFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: workshop-warranty-check
+      Runtime: python3.13
+      Architectures:
+        - arm64
+      Handler: index.handler
+      Role: !GetAtt WarrantyCheckLambdaRole.Arn
+      Timeout: 10
+      # Directory relative to this template. `aws cloudformation package` zips it.
+      Code: ../lambda-handlers/warranty_check
+
+  # ============================================================
+  # Refund Processing Lambda Function (used in Lab 7 — Policies)
+  # ============================================================
+
+  RefundLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: workshop-refund-lambda-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
+  RefundFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: workshop-process-refund
+      Runtime: python3.13
+      Architectures:
+        - arm64
+      Handler: index.handler
+      Role: !GetAtt RefundLambdaRole.Arn
+      Timeout: 10
+      # Directory relative to this template. `aws cloudformation package` zips it.
+      Code: ../lambda-handlers/process_refund
+
+  # ============================================================
+  # SSM Parameters — Cognito
+  # ============================================================
+
+  CognitoMachineClientIdParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /app/customersupport/agentcore/client_id
+      Type: String
+      Value: !Ref MachineUserPoolClient
+      Description: Machine Cognito client ID
+      Tags:
+        Application: CustomerSupport
+  
+  CognitoWebClientIdParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /app/customersupport/agentcore/web_client_id
+      Type: String
+      Value: !Ref WebUserPoolClient
+      Description: Cognito client ID for web app
+      Tags:
+        Application: CustomerSupport
+
+  UserPoolIdParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /app/customersupport/agentcore/pool_id
+      Type: String
+      Value: !Ref UserPool
+      Description: Cognito client ID
+      Tags:
+        Application: CustomerSupport
+  
+  CognitoAuthScopeParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /app/customersupport/agentcore/cognito_auth_scope
+      Type: String
+      Value: !Join
+        - ''
+        - - 'default-m2m-resource-server-'
+          - !Select [0, !Split ['-', !Select [2, !Split ['/', !Ref 'AWS::StackId']]]]
+          - '/read'
+      Description: OAuth2 scope for Cognito auth
+      Tags:
+        Application: CustomerSupport
+
+  CognitoDiscoveryURLParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /app/customersupport/agentcore/cognito_discovery_url
+      Type: String
+      Value: !Sub 'https://cognito-idp.${AWS::Region}.amazonaws.com/${UserPool}/.well-known/openid-configuration'
+      Description: OAuth2 Discovery URL
+      Tags:
+        Application: CustomerSupport
+
+  CognitoTokenURLParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /app/customersupport/agentcore/cognito_token_url
+      Type: String
+      Value: !Join
+        - ''
+        - - !Sub 'https://${AWS::Region}'
+          - !Select [0, !Split ['-', !Select [2, !Split ['/', !Ref 'AWS::StackId']]]]
+          - !Sub '.auth.${AWS::Region}.amazoncognito.com/oauth2/token'
+      Description: OAuth2 Token URL
+      Tags:
+        Application: CustomerSupport
+
+  CognitoAuthorizeURLParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /app/customersupport/agentcore/cognito_auth_url
+      Type: String
+      Value: !Join
+        - ''
+        - - !Sub 'https://${AWS::Region}'
+          - !Select [0, !Split ['-', !Select [2, !Split ['/', !Ref 'AWS::StackId']]]]
+          - !Sub '.auth.${AWS::Region}.amazoncognito.com/oauth2/authorize'
+      Description: OAuth2 Token URL
+      Tags:
+        Application: CustomerSupport
+
+  CognitoDomainParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /app/customersupport/agentcore/cognito_domain
+      Type: String
+      Value: !Join
+        - ''
+        - - !Sub 'https://${AWS::Region}'
+          - !Select [0, !Split ['-', !Select [2, !Split ['/', !Ref 'AWS::StackId']]]]
+          - !Sub '.auth.${AWS::Region}.amazoncognito.com'
+      Description: Cognito hosted domain for OAuth2
+      Tags:
+        Application: CustomerSupport
+
+  # ============================================================
+  # SSM Parameter — Warranty Check Lambda ARN (used in Lab 3)
+  # ============================================================
+
+  WarrantyCheckLambdaArnParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /app/customersupport/agentcore/warranty_check_lambda_arn
+      Type: String
+      Value: !GetAtt WarrantyCheckFunction.Arn
+      Description: ARN of the warranty check Lambda function for AgentCore Gateway
+      Tags:
+        Application: CustomerSupport
+
+  # ============================================================
+  # SSM Parameter — Refund Lambda ARN (used in Lab 7)
+  # ============================================================
+
+  RefundLambdaArnParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /app/customersupport/agentcore/refund_lambda_arn
+      Type: String
+      Value: !GetAtt RefundFunction.Arn
+      Description: ARN of the refund processing Lambda function for AgentCore Gateway
+      Tags:
+        Application: CustomerSupport

@@ -7,8 +7,40 @@
     "agentcore:created-by": "agentcore-cli",
     "agentcore:project-name": "CustomerSupport"
   },
-  "runtimes": [],
-  "memories": [],
+  "runtimes": [
+    {
+      "name": "CustomerSupport",
+      "build": "CodeZip",
+      "entrypoint": "main.py",
+      "codeLocation": "app/CustomerSupport/",
+      "runtimeVersion": "PYTHON_3_14",
+      "networkMode": "PUBLIC",
+      "protocol": "HTTP",
+      "requestHeaderAllowlist": [
+            "X-Amzn-Bedrock-AgentCore-Runtime-Custom-User-Id"
+        ]
+    }
+  ],
+  "memories": [
+    {
+      "name": "SharedMemory",
+      "eventExpiryDuration": 30,
+      "strategies": [
+        {
+          "type": "SEMANTIC",
+          "namespaceTemplates": [
+            "/users/{actorId}/facts"
+          ]
+        },
+        {
+          "type": "SUMMARIZATION",
+          "namespaceTemplates": [
+            "/summaries/{actorId}/{sessionId}"
+          ]
+        }
+      ]
+    }
+  ],
   "knowledgeBases": [],
   "credentials": [],
   "evaluators": [],
