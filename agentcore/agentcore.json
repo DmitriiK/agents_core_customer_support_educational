@@ -13,12 +13,23 @@
       "build": "CodeZip",
       "entrypoint": "main.py",
       "codeLocation": "app/CustomerSupport/",
-      "runtimeVersion": "PYTHON_3_14",
+      "runtimeVersion": "PYTHON_3_13",
       "networkMode": "PUBLIC",
       "protocol": "HTTP",
       "requestHeaderAllowlist": [
-            "X-Amzn-Bedrock-AgentCore-Runtime-Custom-User-Id"
-        ]
+        "X-Amzn-Bedrock-AgentCore-Runtime-Custom-User-Id",
+        "Authorization"
+      ],
+      "authorizerType": "CUSTOM_JWT",
+      "authorizerConfiguration": {
+        "customJwtAuthorizer": {
+          "discoveryUrl": "https://cognito-idp.us-east-1.amazonaws.com/us-east-1_pZjJxMg3E/.well-known/openid-configuration",
+          "allowedClients": [
+            "78ugo8okk0gq8efco5o0aekbcm",
+            "o5rv2bpaki636osspeqjtbhal"
+          ]
+        }
+      }
     }
   ],
   "memories": [
@@ -45,7 +56,45 @@
   "credentials": [],
   "evaluators": [],
   "onlineEvalConfigs": [],
-  "agentCoreGateways": [],
+  "agentCoreGateways": [
+    {
+      "name": "my-gateway-secure",
+      "protocolType": "None",
+      "description": "Gateway for my-gateway-secure",
+      "targets": [
+        {
+          "name": "WarrantyCheck",
+          "targetType": "lambdaFunctionArn",
+          "lambdaFunctionArn": {
+            "lambdaArn": "arn:aws:lambda:us-east-1:984549029384:function:workshop-warranty-check",
+            "toolSchemaFile": "app/CustomerSupport/tool/warranty_schema.json"
+          }
+        }
+      ],
+      "authorizerType": "CUSTOM_JWT",
+      "authorizerConfiguration": {
+        "customJwtAuthorizer": {
+          "discoveryUrl": "https://cognito-idp.us-east-1.amazonaws.com/us-east-1_pZjJxMg3E/.well-known/openid-configuration",
+          "allowedClients": [
+            "78ugo8okk0gq8efco5o0aekbcm",
+            "o5rv2bpaki636osspeqjtbhal"
+          ]
+        }
+      },
+      "enableSemanticSearch": true,
+      "exceptionLevel": "NONE"
+    }
+  ],
+  "unassignedTargets": [
+    {
+      "name": "WarrantyCheck",
+      "targetType": "lambdaFunctionArn",
+      "lambdaFunctionArn": {
+        "lambdaArn": "arn:aws:lambda:us-east-1:984549029384:function:workshop-warranty-check",
+        "toolSchemaFile": "app/CustomerSupport/tool/warranty_schema.json"
+      }
+    }
+  ],
   "policyEngines": [],
   "configBundles": [],
   "abTests": [],
